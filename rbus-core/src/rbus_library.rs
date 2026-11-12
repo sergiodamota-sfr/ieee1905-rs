@@ -5,23 +5,20 @@ use std::os::raw::{c_char, c_int};
 use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
-#[derive(Clone)]
-#[repr(transparent)]
 pub struct RBusLibrary {
-    handle: Arc<RBusLibraryRaw>,
+    handle: RBusLibraryRaw,
 }
 
+static LIBRARY: OnceLock<Result<RBusLibrary, RBusOpenError>> = OnceLock::new();
+
 impl RBusLibrary {
-    /// Dynamically load RBus library
-    pub fn load() -> Result<Self, RBusOpenError> {
-        static CELL: OnceLock<Result<RBusLibrary, RBusOpenError>> = OnceLock::new();
-        let library = CELL.get_or_init(|| {
+    /// Dynamically load the shared RBus library once for the lifetime of the process.
+    pub fn load() -> Result<&'static Self, RBusOpenError> {
+        let library = LIBRARY.get_or_init(|| {
             for library_name in ["librbus.so.0", "librbus.so"] {
                 match unsafe { RBusLibraryRaw::new(library_name) } {
                     Ok(e) => {
-                        return Ok(RBusLibrary {
-                            handle: Arc::new(e),
-                        });
+                        return Ok(RBusLibrary { handle: e });
                     }
                     Err(rbus_sys::libloading::Error::DlOpen { .. }) => continue,
                     Err(rbus_sys::libloading::Error::DlOpenUnknown) => continue,
@@ -30,7 +27,7 @@ impl RBusLibrary {
             }
             Err(RBusOpenError::NotAvailable)
         });
-        library.clone()
+        library.as_ref().map_err(Clone::clone)
     }
 
     ///
@@ -85,8 +82,14 @@ impl RBusLibrary {
         RBusError::map(result, || ())
     }
 
-    pub(crate) fn as_raw(&self) -> &RBusLibraryRaw {
-        &self.handle
+    /// Native wrappers can only be created after successful initialization.
+    pub(crate) fn get() -> &'static RBusLibraryRaw {
+        &LIBRARY
+            .get()
+            .expect("RBus library has not been initialized")
+            .as_ref()
+            .expect("RBus library initialization failed")
+            .handle
     }
 }
 

@@ -9,10 +9,10 @@ use std::os::raw::{c_char, c_int};
 /// Dropping this view does not close the connection.
 ///
 /// ```compile_fail,E0597
-/// use rbus_core::{RBusHandle, RBusLibrary};
-/// fn example(library: &RBusLibrary) -> Result<(), Box<dyn std::error::Error>> {
+/// use rbus_core::RBusHandle;
+/// fn example() -> Result<(), Box<dyn std::error::Error>> {
 ///     let borrowed = {
-///         let owner = RBusHandle::open(library, c"borrowed-connection")?;
+///         let owner = RBusHandle::open(c"borrowed-connection")?;
 ///         owner.as_ref()
 ///     };
 ///     borrowed.get::<i32>(c"Device.Test.Value")?;
@@ -21,22 +21,27 @@ use std::os::raw::{c_char, c_int};
 /// ```
 #[derive(Clone, Copy)]
 pub struct RBusHandleRef<'a> {
-    pub(super) handle: rbusHandle_t,
-    pub(super) library: &'a RBusLibrary,
+    pub(super) handle: &'a rbusHandle_t,
 }
 
 impl<'a> RBusHandleRef<'a> {
-    /// See [`crate::RBusHandle::library`].
-    pub fn library(&self) -> &'a RBusLibrary {
-        self.library
+    ///
+    /// Borrow a native connection without taking ownership.
+    ///
+    /// # Safety
+    /// The connection must remain valid for the entire borrowed lifetime.
+    /// The shared library must already be initialized.
+    ///
+    pub(super) unsafe fn from_raw(handle: &'a rbusHandle_t) -> Self {
+        Self { handle }
     }
 
     /// See [`crate::RBusHandle::register_data_elements`].
     pub fn register_data_elements(&self, elements: &[RBusDataElement]) -> Result<(), RBusError> {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
             library.rbus_regDataElements(
-                self.handle,
+                *self.handle,
                 elements.len() as c_int,
                 elements.as_ptr().cast_mut().cast(),
             )
@@ -46,10 +51,10 @@ impl<'a> RBusHandleRef<'a> {
 
     /// See [`crate::RBusHandle::unregister_data_elements`].
     pub fn unregister_data_elements(&self, elements: &[RBusDataElement]) -> Result<(), RBusError> {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
             library.rbus_unregDataElements(
-                self.handle,
+                *self.handle,
                 elements.len() as c_int,
                 elements.as_ptr().cast_mut().cast(),
             )
@@ -64,10 +69,10 @@ impl<'a> RBusHandleRef<'a> {
         instance_id: u32,
         alias_name: Option<&CStr>,
     ) -> Result<(), RBusError> {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
             library.rbusTable_registerRow(
-                self.handle,
+                *self.handle,
                 table_name.as_ptr(),
                 instance_id,
                 alias_name.map(|e| e.as_ptr()).unwrap_or_default(),
@@ -78,8 +83,8 @@ impl<'a> RBusHandleRef<'a> {
 
     /// See [`crate::RBusHandle::unregister_table_row`].
     pub fn unregister_table_row(&self, row_name: &CStr) -> Result<(), RBusError> {
-        let library = self.library.as_raw();
-        let result = unsafe { library.rbusTable_unregisterRow(self.handle, row_name.as_ptr()) };
+        let library = RBusLibrary::get();
+        let result = unsafe { library.rbusTable_unregisterRow(*self.handle, row_name.as_ptr()) };
         RBusError::map(result, || ())
     }
 
@@ -99,22 +104,20 @@ impl<'a> RBusHandleRef<'a> {
                 return rbusError_t::RBUS_ERROR_INVALID_INPUT;
             }
 
-            let callback = |handle: RBusHandleRef<'_>| {
-                let table_name = unsafe { CStr::from_ptr(table_name) };
-                T::sync_rows(handle, table_name)
-            };
             // SAFETY: RBus keeps the connection valid for this callback.
-            let result = unsafe { RBusHandleRef::run_with_raw(handle, callback) };
+            let handle = unsafe { RBusHandleRef::from_raw(&handle) };
+            let table_name = unsafe { CStr::from_ptr(table_name) };
+            let result = T::sync_rows(handle, table_name);
 
             match result {
                 Ok(_) => rbusError_t::RBUS_ERROR_SUCCESS,
                 Err(e) => e.to_raw(),
             }
         }
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
             library.rbus_registerDynamicTableSyncHandler(
-                self.handle,
+                *self.handle,
                 table_name.as_ptr(),
                 Some(handler::<T>),
             )
@@ -135,13 +138,10 @@ impl<'a> RBusHandleRef<'a> {
     /// See [`crate::RBusHandle::get_value`].
     pub fn get_value(&self, name: &CStr) -> Result<RBusValue, RBusError> {
         let mut value = rbusValue_t::default();
-        let library = self.library.as_raw();
-        let result = unsafe { library.rbus_get(self.handle, name.as_ptr(), &mut value) };
+        let library = RBusLibrary::get();
+        let result = unsafe { library.rbus_get(*self.handle, name.as_ptr(), &mut value) };
 
-        RBusError::map(result, || RBusValue {
-            handle: value,
-            library: self.library.clone(),
-        })
+        RBusError::map(result, || RBusValue { handle: value })
     }
 
     /// See [`crate::RBusHandle::set`].
@@ -149,15 +149,15 @@ impl<'a> RBusHandleRef<'a> {
     where
         T: RBusValueWritable + ?Sized,
     {
-        self.set_value(name, &RBusValue::from(self.library, value))
+        self.set_value(name, &RBusValue::from_initialized(value))
     }
 
     /// See [`crate::RBusHandle::set_value`].
     pub fn set_value(&self, name: &CStr, value: &RBusValue) -> Result<(), RBusError> {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
             library.rbus_set(
-                self.handle,
+                *self.handle,
                 name.as_ptr(),
                 value.handle,
                 std::ptr::null_mut(),
@@ -169,9 +169,9 @@ impl<'a> RBusHandleRef<'a> {
     /// See [`crate::RBusHandle::get_table_row_names`].
     pub fn get_table_row_names(&self, table_name: &CStr) -> Result<RBusRowNames<'a>, RBusError> {
         let mut row_info = std::ptr::null_mut();
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe {
-            library.rbusTable_getRowNames(self.handle, table_name.as_ptr(), &mut row_info)
+            library.rbusTable_getRowNames(*self.handle, table_name.as_ptr(), &mut row_info)
         };
         RBusError::map(result, || RBusRowNames {
             handle: *self,
@@ -181,23 +181,6 @@ impl<'a> RBusHandleRef<'a> {
 
     /// See [`crate::RBusHandle::to_raw`].
     pub fn to_raw(&self) -> *const () {
-        self.handle.cast()
-    }
-
-    ///
-    /// Borrow a connection for the duration of a native callback.
-    ///
-    /// # Safety
-    /// The native handle must remain valid until the callback returns.
-    ///
-    pub(super) unsafe fn run_with_raw<T, F>(handle: rbusHandle_t, f: F) -> Result<T, RBusError>
-    where
-        F: for<'b> FnOnce(RBusHandleRef<'b>) -> Result<T, RBusError>,
-    {
-        let library = RBusLibrary::load().map_err(|_| RBusError::GeneralError)?;
-        f(RBusHandleRef {
-            handle,
-            library: &library,
-        })
+        (*self.handle).cast()
     }
 }

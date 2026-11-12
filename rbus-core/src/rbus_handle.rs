@@ -21,7 +21,6 @@ use std::marker::PhantomData;
 ///
 pub struct RBusHandle {
     pub(crate) handle: rbusHandle_t,
-    pub(crate) library: RBusLibrary,
     _name_reservation: RBusHandleName,
 }
 
@@ -31,6 +30,7 @@ unsafe impl Sync for RBusHandle {}
 impl RBusHandle {
     ///
     /// Open a bus connection for a software component.
+    /// Returns RBusError::GeneralError if the shared library cannot be loaded.
     ///
     /// If multiple components share a software process, the first component that
     /// calls this API will establish a new socket connection to the bus broker.
@@ -49,14 +49,14 @@ impl RBusHandle {
     ///
     /// Used by: All RBus components to begin a connection with the bus.
     ///
-    pub fn open(library: &RBusLibrary, name: &CStr) -> Result<Self, RBusError> {
+    pub fn open(name: &CStr) -> Result<Self, RBusError> {
+        RBusLibrary::load().map_err(|_| RBusError::GeneralError)?;
         let reserved_name = RBusHandleName::reserve(name)?;
         let mut handle = rbusHandle_t::default();
-        let result = unsafe { library.as_raw().rbus_open(&mut handle, name.as_ptr()) };
+        let result = unsafe { RBusLibrary::get().rbus_open(&mut handle, name.as_ptr()) };
 
         RBusError::map(result, || Self {
             handle,
-            library: library.clone(),
             _name_reservation: reserved_name,
         })
     }
@@ -66,14 +66,8 @@ impl RBusHandle {
     ///
     pub fn as_ref(&self) -> RBusHandleRef<'_> {
         RBusHandleRef {
-            handle: self.handle,
-            library: &self.library,
+            handle: &self.handle,
         }
-    }
-
-    /// Get library this handle was created with
-    pub fn library(&self) -> &RBusLibrary {
-        self.as_ref().library()
     }
 
     ///
@@ -228,7 +222,7 @@ impl RBusHandle {
 
 impl Drop for RBusHandle {
     fn drop(&mut self) {
-        unsafe { self.library.as_raw().rbus_close(self.handle) };
+        unsafe { RBusLibrary::get().rbus_close(self.handle) };
     }
 }
 
@@ -259,8 +253,8 @@ impl RBusRowNames<'_> {
 impl Drop for RBusRowNames<'_> {
     fn drop(&mut self) {
         unsafe {
-            let library = self.handle.library.as_raw();
-            library.rbusTable_freeRowNames(self.handle.handle, self.root)
+            let library = RBusLibrary::get();
+            library.rbusTable_freeRowNames(*self.handle.handle, self.root)
         };
     }
 }

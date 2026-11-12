@@ -192,13 +192,11 @@ impl<'a> RBusDataElement<'a> {
                 return rbusError_t::RBUS_ERROR_INVALID_HANDLE;
             }
 
-            let callback = |handle: RBusHandleRef<'_>| {
-                // SAFETY: RBus keeps the property valid for this callback.
-                let property = unsafe { RBusPropertyRef::from_raw(handle.library(), property) };
-                T::get(handle, property)
-            };
             // SAFETY: RBus keeps the connection valid for this callback.
-            let result = unsafe { RBusHandleRef::run_with_raw(handle, callback) };
+            let handle = unsafe { RBusHandleRef::from_raw(&handle) };
+            // SAFETY: RBus keeps the property valid for this callback.
+            let property = unsafe { RBusPropertyRef::from_raw(&property) };
+            let result = T::get(handle, property);
 
             match result {
                 Ok(_) => rbusError_t::RBUS_ERROR_SUCCESS,
@@ -225,13 +223,11 @@ impl<'a> RBusDataElement<'a> {
                 return rbusError_t::RBUS_ERROR_INVALID_HANDLE;
             }
 
-            let callback = |handle: RBusHandleRef<'_>| {
-                // SAFETY: RBus keeps the property valid for this callback.
-                let property = unsafe { RBusPropertyRef::from_raw(handle.library(), property) };
-                T::set(handle, property)
-            };
             // SAFETY: RBus keeps the connection valid for this callback.
-            let result = unsafe { RBusHandleRef::run_with_raw(handle, callback) };
+            let handle = unsafe { RBusHandleRef::from_raw(&handle) };
+            // SAFETY: RBus keeps the property valid for this callback.
+            let property = unsafe { RBusPropertyRef::from_raw(&property) };
+            let result = T::set(handle, property);
 
             match result {
                 Ok(_) => rbusError_t::RBUS_ERROR_SUCCESS,

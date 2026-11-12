@@ -1,6 +1,6 @@
 mod reference;
 
-use crate::rbus_library::RBusLibrary;
+use crate::rbus_library::{RBusLibrary, RBusOpenError};
 use crate::rbus_value::RBusValue;
 use crate::{RBusObject, RBusValueGetError, RBusValueReadable, RBusValueWritable};
 use rbus_sys::*;
@@ -10,22 +10,20 @@ use std::ffi::{CStr, CString};
 
 pub struct RBusProperty {
     pub(super) handle: rbusProperty_t,
-    pub(crate) library: RBusLibrary,
 }
 
 impl RBusProperty {
     ///
     /// Allocate and initialize a property.
+    /// Loads the shared library if needed and returns an error if it is unavailable.
     ///
-    pub fn new(library: &RBusLibrary, name: &CStr, value: &RBusValue) -> Self {
-        let library_raw = library.as_raw();
+    pub fn new(name: &CStr, value: &RBusValue) -> Result<Self, RBusOpenError> {
+        RBusLibrary::load()?;
+        let library_raw = RBusLibrary::get();
         let handle = unsafe {
             library_raw.rbusProperty_Init(std::ptr::null_mut(), name.as_ptr(), value.handle)
         };
-        Self {
-            handle,
-            library: library.clone(),
-        }
+        Ok(Self { handle })
     }
 
     ///
@@ -33,19 +31,15 @@ impl RBusProperty {
     ///
     pub fn as_ref(&self) -> RBusPropertyRef<'_> {
         RBusPropertyRef {
-            handle: self.handle,
-            library: &self.library,
+            handle: &self.handle,
         }
     }
 
-    pub(crate) fn retain(library: &RBusLibrary, handle: rbusProperty_t) -> Self {
+    pub(crate) fn retain(handle: rbusProperty_t) -> Self {
         unsafe {
-            library.as_raw().rbusProperty_Retain(handle);
+            RBusLibrary::get().rbusProperty_Retain(handle);
         }
-        Self {
-            handle,
-            library: library.clone(),
-        }
+        Self { handle }
     }
 
     ///
@@ -120,7 +114,7 @@ impl RBusProperty {
 
 impl Drop for RBusProperty {
     fn drop(&mut self) {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         unsafe {
             library.rbusProperty_Release(self.handle);
         }
@@ -129,13 +123,12 @@ impl Drop for RBusProperty {
 
 impl Clone for RBusProperty {
     fn clone(&self) -> Self {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         unsafe {
             library.rbusProperty_Retain(self.handle);
         }
         Self {
             handle: self.handle,
-            library: self.library.clone(),
         }
     }
 }
@@ -150,7 +143,7 @@ impl PartialEq for RBusProperty {
 
 impl Ord for RBusProperty {
     fn cmp(&self, other: &Self) -> Ordering {
-        let library = self.library.as_raw();
+        let library = RBusLibrary::get();
         let result = unsafe { library.rbusProperty_Compare(self.handle, other.handle) };
         if result < 0 {
             return Ordering::Less;
