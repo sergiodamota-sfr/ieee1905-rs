@@ -3,7 +3,7 @@ use crate::element::{
     RBusProviderTableSyncArgsInner,
 };
 use bstr::BStr;
-use rbus_core::{RBusError, RBusHandle, RBusProperty};
+use rbus_core::{RBusError, RBusHandleRef, RBusPropertyRef};
 
 ///
 /// Specific provider registry instance trait
@@ -14,12 +14,16 @@ pub(crate) trait RBusRegistryInstanceTrait: Send + 'static {
     ///
     /// Handle property getter
     ///
-    fn invoke_get(&mut self, property: &RBusProperty, path: &BStr) -> Result<(), RBusError>;
+    fn invoke_get(&mut self, property: RBusPropertyRef<'_>, path: &BStr) -> Result<(), RBusError>;
 
     ///
     /// Handle table sync
     ///
-    fn invoke_table_sync(&mut self, handle: &RBusHandle, path: &BStr) -> Result<(), RBusError>;
+    fn invoke_table_sync(
+        &mut self,
+        handle: RBusHandleRef<'_>,
+        path: &BStr,
+    ) -> Result<(), RBusError>;
 }
 
 ///
@@ -46,7 +50,7 @@ impl<T> RBusRegistryInstanceTrait for RBusRegistryInstance<T>
 where
     T: RBusProviderElement,
 {
-    fn invoke_get(&mut self, property: &RBusProperty, path: &BStr) -> Result<(), RBusError> {
+    fn invoke_get(&mut self, property: RBusPropertyRef<'_>, path: &BStr) -> Result<(), RBusError> {
         let path_chunks = path.split(|e| *e == b'.').filter(|e| !e.is_empty());
         let path_chunks = path_chunks.map(BStr::new).collect::<Vec<_>>();
 
@@ -67,7 +71,11 @@ where
         })
     }
 
-    fn invoke_table_sync(&mut self, handle: &RBusHandle, path: &BStr) -> Result<(), RBusError> {
+    fn invoke_table_sync(
+        &mut self,
+        handle: RBusHandleRef<'_>,
+        path: &BStr,
+    ) -> Result<(), RBusError> {
         let path_chunks = path.split(|e| *e == b'.').filter(|e| !e.is_empty());
         let path_chunks = path_chunks.map(BStr::new).collect::<Vec<_>>();
 

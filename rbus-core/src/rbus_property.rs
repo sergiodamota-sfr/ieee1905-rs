@@ -1,7 +1,10 @@
+mod reference;
+
 use crate::rbus_library::RBusLibrary;
 use crate::rbus_value::RBusValue;
 use crate::{RBusObject, RBusValueGetError, RBusValueReadable, RBusValueWritable};
 use rbus_sys::*;
+pub use reference::RBusPropertyRef;
 use std::cmp::Ordering;
 use std::ffi::{CStr, CString};
 
@@ -25,6 +28,16 @@ impl RBusProperty {
         }
     }
 
+    ///
+    /// Borrow this property without retaining its native handle.
+    ///
+    pub fn as_ref(&self) -> RBusPropertyRef<'_> {
+        RBusPropertyRef {
+            handle: self.handle,
+            library: &self.library,
+        }
+    }
+
     pub(crate) fn retain(library: &RBusLibrary, handle: rbusProperty_t) -> Self {
         unsafe {
             library.as_raw().rbusProperty_Retain(handle);
@@ -39,24 +52,14 @@ impl RBusProperty {
     /// Get the name of a property.
     ///
     pub fn get_name(&self) -> CString {
-        let library = self.library.as_raw();
-        unsafe {
-            let ptr = library.rbusProperty_GetName(self.handle);
-            if ptr.is_null() {
-                return CString::default();
-            }
-            CStr::from_ptr(ptr).to_owned()
-        }
+        self.as_ref().get_name()
     }
 
     ///
     /// Set the name of a property.
     ///
     pub fn set_name(&self, name: &CStr) {
-        let library = self.library.as_raw();
-        unsafe {
-            library.rbusProperty_SetName(self.handle, name.as_ptr());
-        }
+        self.as_ref().set_name(name)
     }
 
     ///
@@ -66,18 +69,14 @@ impl RBusProperty {
     where
         T: RBusValueReadable,
     {
-        self.get_value().get()
+        self.as_ref().get()
     }
 
     ///
     /// Get the value of a property.
     ///
     pub fn get_value(&self) -> RBusValue {
-        let library = self.library.as_raw();
-        unsafe {
-            let handle = library.rbusProperty_GetValue(self.handle);
-            RBusValue::retain(&self.library, handle)
-        }
+        self.as_ref().get_value()
     }
 
     ///
@@ -87,47 +86,35 @@ impl RBusProperty {
     where
         T: RBusValueWritable + ?Sized,
     {
-        self.set_value(&RBusValue::from(&self.library, value));
+        self.as_ref().set(value)
     }
 
     ///
     /// Set the value of a property.
     ///
     pub fn set_value(&self, value: &RBusValue) {
-        let library = self.library.as_raw();
-        unsafe {
-            library.rbusProperty_SetValue(self.handle, value.handle);
-        }
+        self.as_ref().set_value(value)
     }
 
     ///
     /// Set the object of a property.
     ///
     pub fn set_object(&self, value: &RBusObject) {
-        let library = self.library.as_raw();
-        unsafe {
-            library.rbusProperty_SetObject(self.handle, value.handle);
-        }
+        self.as_ref().set_object(value)
     }
 
     ///
     /// Set the property of a property.
     ///
     pub fn set_property(&self, value: &RBusProperty) {
-        let library = self.library.as_raw();
-        unsafe {
-            library.rbusProperty_SetProperty(self.handle, value.handle);
-        }
+        self.as_ref().set_property(value)
     }
 
     ///
     /// Append a property to the end of a property list.  
     ///
     pub fn append_property(&self, value: &RBusProperty) {
-        let library = self.library.as_raw();
-        unsafe {
-            library.rbusProperty_Append(self.handle, value.handle);
-        }
+        self.as_ref().append_property(value)
     }
 }
 

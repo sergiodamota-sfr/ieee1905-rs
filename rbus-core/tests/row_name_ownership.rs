@@ -31,9 +31,12 @@ fn collected_row_names_survive_iterator_drop() -> anyhow::Result<()> {
     bus.register_table_row(&table, 1, Some(expected_alias))
         .context("register test row with an alias")?;
 
-    let names = bus
-        .get_table_row_names(&table)
-        .context("get test table rows")?;
+    let names = {
+        let borrowed = bus.as_ref();
+        borrowed
+            .get_table_row_names(&table)
+            .context("get test table rows")?
+    };
     let rows: Vec<_> = names.iter().collect();
 
     // The iterator is dropped; names still owns the list.
