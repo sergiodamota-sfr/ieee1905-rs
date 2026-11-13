@@ -1,3 +1,7 @@
+mod reference;
+
+pub use reference::RBusObjectRef;
+
 use crate::rbus_library::{RBusLibrary, RBusOpenError};
 use crate::rbus_property::RBusProperty;
 use crate::{RBusProperties, RBusValue};
@@ -9,6 +13,13 @@ pub struct RBusObject {
 }
 
 impl RBusObject {
+    /// Borrow this object without retaining its native handle.
+    pub fn as_ref(&self) -> RBusObjectRef<'_> {
+        RBusObjectRef {
+            handle: &self.handle,
+        }
+    }
+
     ///
     /// Allocate, initialize, and take ownership of an object.
     /// Loads the shared library if needed and returns an error if it is unavailable.
@@ -26,14 +37,7 @@ impl RBusObject {
     /// Get the name of the object.
     ///
     pub fn get_name(&self) -> CString {
-        let library = RBusLibrary::get();
-        unsafe {
-            let ptr = library.rbusObject_GetName(self.handle);
-            if ptr.is_null() {
-                return CString::default();
-            }
-            CStr::from_ptr(ptr).to_owned()
-        }
+        self.as_ref().get_name()
     }
 
     ///
@@ -62,11 +66,7 @@ impl RBusObject {
     /// The collection retains ownership of the list independently of the object.
     ///
     pub fn get_properties(&self) -> RBusProperties {
-        let library = RBusLibrary::get();
-        unsafe {
-            let handle = library.rbusObject_GetProperties(self.handle);
-            RBusProperties::retain(handle)
-        }
+        self.as_ref().get_properties()
     }
 
     ///
@@ -83,14 +83,7 @@ impl RBusObject {
     /// Get a property by name from an object.
     ///
     pub fn get_property(&self, name: &CStr) -> Option<RBusProperty> {
-        let library = RBusLibrary::get();
-        unsafe {
-            let handle = library.rbusObject_GetProperty(self.handle, name.as_ptr());
-            if handle.is_null() {
-                return None;
-            }
-            Some(RBusProperty::retain(handle))
-        }
+        self.as_ref().get_property(name)
     }
 
     ///

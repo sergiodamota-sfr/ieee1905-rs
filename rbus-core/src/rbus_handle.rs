@@ -18,6 +18,7 @@ use std::marker::PhantomData;
 
 ///
 /// An RBus handle which identifies an opened component
+/// Do not drop the last owner of this connection from an event callback.
 ///
 pub struct RBusHandle {
     pub(crate) handle: rbusHandle_t,

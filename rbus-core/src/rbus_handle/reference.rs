@@ -32,7 +32,7 @@ impl<'a> RBusHandleRef<'a> {
     /// The connection must remain valid for the entire borrowed lifetime.
     /// The shared library must already be initialized.
     ///
-    pub(super) unsafe fn from_raw(handle: &'a rbusHandle_t) -> Self {
+    pub(crate) unsafe fn from_raw(handle: &'a rbusHandle_t) -> Self {
         Self { handle }
     }
 
